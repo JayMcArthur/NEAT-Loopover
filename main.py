@@ -26,23 +26,12 @@ gen = 0
 
 WHITE = (255,255,255)
 BLACK = (0,0,0)
-DARK = True
-if DARK:
-    GREEN = (64,220,64)
-    ORANGE= (200,80,40)
-    PURPLE= (220,20,250)
-    TEAL  = (50,220,190)
-    BG    = (30,30,30)
-    TX    = (200,200,200)
-else:
-    GREEN = (32,200,32)
-    ORANGE= (250,50,20)
-    PURPLE= (220,20,250)
-    TEAL  = (50,220,190)
-    BG    = (230,230,230)
-    TX    = (0,0,0)
-#keys = {"w":0,"a":0,"s":0,"d":0,"q":0}
-#mouse = {"state":[False,False,False],"sticky":[0,0]}
+GREEN = (64,220,64)
+ORANGE= (200,80,40)
+PURPLE= (220,20,250)
+TEAL  = (50,220,190)
+BG    = (30,30,30)
+TX    = (200,200,200)
 
 class Tile:
         def __init__(self, id, s):
@@ -63,7 +52,7 @@ class Tile:
             win.blit(tile, (x, y))
 
 class Board:
-    SCRAMBLE_TURNS = 100
+    SCRAMBLE_TURNS = 5
 
     def __init__(self, size = 5):
         self.game = False
@@ -76,7 +65,6 @@ class Board:
             self.content.append([])
             for j in range(size):
                 self.content[i].append(Tile(i + j*size + 1, size))
-                #self.content[i][j] = 
 
     def move(self, row, column, x, y):
         new_row = []
@@ -103,7 +91,8 @@ class Board:
                 y = j * h
                 self.content[i][j].draw(win, x, y, w, h)
 
-    def scramble(self):
+    def scramble(self, gen):
+        self.SCRAMBLE_TURNS = (gen) % 15 + 1
         for i in range(self.SCRAMBLE_TURNS):
             o = random.randint(0,3)
             if o == 0:
@@ -156,7 +145,7 @@ def draw_window(win, board, gen):
 
     # generations
     score_label = CONTROLS_FONT.render("Gens: " + str(gen-1),1,(255,255,255))
-    win.blit(score_label, (WIN_WIDTH - 10 - score_label.get_rect().width, 10))
+    win.blit(score_label, (WIN_WIDTH - 10 - score_label.get_rect().width, WIN_HEIGHT))
 
     pygame.display.update()
 
@@ -168,15 +157,17 @@ def eval_genomes(genomes, config):
     nets = []
     boards = []
     ge = []
+    last = []
 
     for genome_id, genome in genomes:
         genome.fitness = 0  # start with fitness level of 0
         net = neat.nn.FeedForwardNetwork.create(genome, config)
         nets.append(net)
         boards.append(Board())
-        boards[-1].scramble()
+        boards[-1].scramble(gen)
         ge.append(genome)
         boards[-1].start_time()
+        last.append(0)
 
     clock = pygame.time.Clock()
     #last_was_Q = False
@@ -202,7 +193,7 @@ def eval_genomes(genomes, config):
                 break
 
         for x, board in enumerate(boards):
-            ge[x].fitness += board.is_solved()
+            ge[x].fitness += board.is_solved() / 10
 
             board_state = []
             for i in range(board.size):
@@ -210,7 +201,6 @@ def eval_genomes(genomes, config):
                     board_state.append(board.content[i][j].id)
 
             output = nets[x].activate(board_state)
-            print(output)
 
             # AI move logic
             pos = 0
@@ -223,6 +213,10 @@ def eval_genomes(genomes, config):
             if output[5] > 0:
                 pos += 1
 
+            if pos != last[x]:
+                ge[x].fitness += 0.1
+                last[x] = pos
+
             if output[0] > 0:
                 if output[1] > 0: board.move(pos, 0, -1, 0)
                 else: board.move(pos, 0, 1, 0)
@@ -234,18 +228,18 @@ def eval_genomes(genomes, config):
         for board in boards:
             if board.is_solved() == 1:
                 board.end_time()
-                ge[birds.index(bird)].fitness += (1000 * 120) / (board.start_time_v[0] - board.end_time_v[0])**2 / (board.moves/10)
+                ge[boards.index(board)].fitness += (60 * (gen + 1)) / (board.start_time_v - board.end_time_v)**2 / (board.moves)
                 nets.pop(boards.index(board))
                 ge.pop(boards.index(board))
                 boards.pop(boards.index(board))
 
         # Check for lose
-        if boards[0].get_time()[0] > 120:
-            for board in boards:
+        if boards[0].get_time()[0] > 60:
+            for board in boards[::-1]:
                 board.end_time()
-                nets.pop(boards.index(board))
-                ge.pop(boards.index(board))
-                boards.pop(boards.index(board))
+                nets.pop()
+                ge.pop()
+                boards.pop()
 
 def run(config_file):
     config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
@@ -255,8 +249,9 @@ def run(config_file):
     p.add_reporter(neat.StdOutReporter(True))
     stats = neat.StatisticsReporter()
     p.add_reporter(stats)
-    winner = p.run(eval_genomes, 50)
+    winner = p.run(eval_genomes, 100)
     print('\nBest genome:\n{!s}'.format(winner))
+    input()
 
 if __name__ == "__main__":
     local_dir = os.path.dirname(__file__)
